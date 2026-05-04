@@ -52,19 +52,15 @@ import adris.altoclef.ui.CommandStatusOverlay;
 import adris.altoclef.ui.MessagePriority;
 import adris.altoclef.ui.MessageSender;
 import adris.altoclef.ui.PlayerModeToggleButton;
-import adris.altoclef.ui.STTfeedback;
 import adris.altoclef.util.helpers.InputHelper;
 import baritone.Baritone;
 import baritone.altoclef.AltoClefSettings;
 import baritone.api.BaritoneAPI;
 import baritone.api.Settings;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.item.Item;
 import net.minecraft.item.Items;
@@ -115,7 +111,6 @@ public class AltoClef implements ModInitializer {
 
     // AI Command & API
     private AICommandBridge aiBridge;
-    private long lastHeartbeatTime = System.nanoTime();
 
     // stopping logic
     public boolean isStopping = false;
@@ -123,10 +118,6 @@ public class AltoClef implements ModInitializer {
     private static AltoClef instance;
 
     private boolean inGame = false;
-
-    // STT key:
-    private static KeyBinding sttKeybind;
-    private static boolean wasPressedLastFrame = false;
 
     // Are we in game (playing in a server/world)
     public static boolean inGame() {
@@ -154,28 +145,6 @@ public class AltoClef implements ModInitializer {
         // EventBus.subscribe(ClientLoginEvent.class, evt -> {
         // System.out.println("LOGGED IN");
         // });
-        sttKeybind = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.chatclef.sttKey",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_Z, // by default, the key is Z
-                "category.chatclef.keybindings"));
-
-        net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            boolean isCurrentlyPressed = sttKeybind.isPressed();
-            long now = System.nanoTime();
-            if (isCurrentlyPressed && !wasPressedLastFrame) {
-                System.out.println("PRESSED KEY" + now);
-                STTfeedback.setListening();
-                aiBridge.startSTT();
-            } else if (!isCurrentlyPressed && wasPressedLastFrame) {
-                System.out.println("LET GO OF KEY" + now);
-                STTfeedback.setIdle();
-                aiBridge.stopSTT();
-            }
-
-            wasPressedLastFrame = isCurrentlyPressed;
-        });
-
     }
 
     public void onInitializeLoad() {
@@ -307,13 +276,6 @@ public class AltoClef implements ModInitializer {
             stop();
         }
 
-        // Call heartbeat every 60 seconds
-        long now = System.nanoTime();
-        if (now - lastHeartbeatTime > 60_000_000_000L) {
-            aiBridge.sendHeartbeat();
-            lastHeartbeatTime = now;
-        }
-
         if (aiBridge.getEnabled() && inGame && AltoClef.inGame()) {
             aiBridge.onTick();
         }
@@ -375,7 +337,6 @@ public class AltoClef implements ModInitializer {
 
         ChatclefToggleButton.render(context, context.getMatrices(), getAiBridge().getEnabled());
         PlayerModeToggleButton.render(context, context.getMatrices(), getAiBridge().getPlayerMode());
-        STTfeedback.render(context, context.getMatrices(), sttKeybind);
     }
 
     private void onLogin() {

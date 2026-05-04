@@ -223,6 +223,11 @@ public class ConversationHistory {
      */
     public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
             String altoclefStatusMsgs) {
+        return copyThenWrapLatestWithStatus(worldStatus, agentStatus, altoclefStatusMsgs, "");
+    }
+
+    public ConversationHistory copyThenWrapLatestWithStatus(String worldStatus, String agentStatus,
+            String altoclefStatusMsgs, String multiAgentMemory) {
         ConversationHistory copy = new ConversationHistory(
                 conversationHistory.get(0).get("content").getAsString());
         for (int i = 1; i < conversationHistory.size() - 1; i++) {
@@ -237,6 +242,9 @@ public class ConversationHistory {
                 msgObj.add("worldStatus", worldStatus);
                 msgObj.add("agentStatus", agentStatus);
                 msgObj.add("gameDebugMessages", altoclefStatusMsgs);
+                if (multiAgentMemory != null && !multiAgentMemory.isBlank()) {
+                    msgObj.add("multiAgentMemory", multiAgentMemory);
+                }
                 last.addProperty("content", msgObj.toString());
             }
             copy.addHistory(last, false);

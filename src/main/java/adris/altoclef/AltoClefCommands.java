@@ -12,6 +12,7 @@ import adris.altoclef.commands.GotoCommand;
 import adris.altoclef.commands.HeroCommand;
 import adris.altoclef.commands.IdleCommand;
 import adris.altoclef.commands.LocateStructureCommand;
+import adris.altoclef.commands.LLMConfigCommand;
 import adris.altoclef.commands.MeatCommand;
 import adris.altoclef.commands.ReloadSettingsCommand;
 import adris.altoclef.commands.SetAIBridgeEnabledCommand;
@@ -50,7 +51,8 @@ public class AltoClefCommands {
                 new GiveCommand(),
                 new ScanCommand(),
                 new AttackPlayerOrMobCommand(),
-                new SetAIBridgeEnabledCommand()
+                new SetAIBridgeEnabledCommand(),
+                new LLMConfigCommand()
         );
     }
 }

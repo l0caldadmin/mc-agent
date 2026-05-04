@@ -12,7 +12,7 @@ public class ResetMemoryCommand extends Command {
 
     @Override
     protected void call(AltoClef mod, ArgParser parser) {
-        mod.getAiBridge().conversationHistory().clear();
+        mod.getAiBridge().clearMemory();
         finish();
     }
 }

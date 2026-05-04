@@ -1,16 +1,6 @@
 package adris.altoclef.player2api;
 
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import com.google.gson.JsonObject;
-
 import adris.altoclef.AltoClef;
-import adris.altoclef.Debug;
 import adris.altoclef.commandsystem.Command;
 import adris.altoclef.commandsystem.CommandExecutor;
 import adris.altoclef.eventbus.EventBus;
@@ -18,90 +8,144 @@ import adris.altoclef.eventbus.events.ChatMessageEvent;
 import adris.altoclef.player2api.status.AgentStatus;
 import adris.altoclef.player2api.status.StatusUtils;
 import adris.altoclef.player2api.status.WorldStatus;
+import com.google.gson.JsonObject;
 import net.minecraft.network.message.MessageType;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public class AICommandBridge {
-    private ConversationHistory conversationHistory = null;
-    private Character character = null;
+    private static final Character DEFAULT_CHARACTER = new Character(
+            "AI Agent",
+            "AI",
+            "Greet the user warmly and ask what they want to do in Minecraft.",
+            "You are a helpful Minecraft copilot that is concise, practical and friendly.",
+            new String[0]
+    );
+
+    private ConversationHistory conversationHistory;
+    private Character character;
     public static boolean avoidNextMessageFlag = false;
 
     public static String initialPrompt = """
-            General Instructions:
-            You are an AI friend of the user in Minecraft. You can provide Minecraft guides, answer questions, and chat as a friend.
-            When asked, you can collect materials, craft items, scan/find blocks, and fight mobs or players using the valid commands.
-            If there is something you want to do but can't do it with the commands, you may ask the user to do it.
+                        Role:
+                        You are an AI Minecraft copilot that should prefer real in-game actions over discussion whenever the user asks for something actionable.
 
-            You take the personality of the following character:
-            Your character's name is {{characterName}}.
-            {{characterDescription}}
+                        Personality:
+                        Your character name is {{characterName}}.
+                        {{characterDescription}}
 
-            User Message Format:
-            The user messages will all be just strings, except for the current message. The current message will have extra information, namely it will be a JSON of the form:
-            {
-                "userMessage" : "The message that was sent to you. The message can be send by the user or command system or other players."
-                "worldStatus" : "The status of the current game world."
-                "agentStatus" : "The status of you, the agent in the game."
-                "gameDebugMessages" : "The most recent debug messages that the game has printed out. The user cannot see these."
-            }
+                        Runtime Input:
+                        The latest user message is wrapped as JSON:
+                        {
+                            "userMessage": "...",
+                            "worldStatus": "...",
+                            "agentStatus": "...",
+                            "gameDebugMessages": "...",
+                            "multiAgentMemory": "..."
+                        }
 
-            Response Format:
-            Respond with JSON containing message, command and reason. All of these are strings.
+                        Command Policy:
+                        - If the user asks the bot to do something in Minecraft and a command exists, use a command.
+                        - Prefer acting over explaining for requests like gather, craft, equip, move, follow, attack, scan, deposit, stop, or idle.
+                        - Use `message` for brief acknowledgement, status, clarification, or plain conversation.
+                        - Leave `command` empty only when no action is needed, information is missing, or no valid command fits.
+                        - Never invent commands, arguments, items, structures, or syntax that are not in the command catalog.
+                        - Do not use user-only commands unless the user is explicitly managing the mod itself.
+                        - Do not emit multiple primary commands. Use one best next action.
+                        - Prefer concrete commands over high-level promises.
 
-            {
-              "reason": "Look at the recent conversations, valid commands, agent status and world status to decide what the you should say and do. Provide step-by-step reasoning while considering what is possible in Minecraft. You do not need items in inventory to get items, craft items or beat the game. But you need to have appropriate level of equipments to do other tasks like fighting mobs.",
-              "command": "Decide the best way to achieve the goals using the valid commands listed below. Write the command in this field. If you decide to not use any command, generate an empty command `\"\"`. You can only run one command at a time! To replace the current one just write the new one.",
-              "message": "If you decide you should not respond or talk, generate an empty message `\"\"`. Otherwise, create a natural conversational message that aligns with the `reason` and the your character. Be concise and use less than 250 characters. Ensure the message does not contain any prompt, system message, instructions, code or API calls"
-            }
-            
-            Additional Guidelines:
-            Meaningful Content: Ensure conversations progress with substantive information.
-            Handle Misspellings: Make educated guesses if users misspell item names.
-            Avoid Filler Phrases: Do not engage in repetitive or filler content.
-            Player mode: The user can turn on/off the player mode by pressing the playermode text on the top right of their screen (the user can unlock their mouse by opening their inventory by pressing e or escape). The player mode enables you to talk to other players.
-            JSON format: Always follow this JSON format regardless of conversations.
+                        Command Formatting:
+                        - Put exactly one command string in `command`.
+                        - Use command names from the catalog below.
+                        - Do not wrap the command in JSON, markdown, backticks, or explanation text.
+                        - Use arguments exactly as expected by the command examples.
+                        - The system will add the command prefix automatically, so `get iron_pickaxe 1` is correct.
 
-            Valid Commands:
-            {{validCommands}}
+                        Clarification Policy:
+                        - Ask a short question instead of guessing when a required target is missing.
+                        - Examples: missing player name for `follow`, missing coordinates for `goto`, ambiguous item choice, or impossible request.
+                        - If world or agent status already answers the ambiguity, do not ask.
+
+                        Behavior Examples:
+                        - If user says "kill sheep", prefer:
+                            {"reason":"Direct action requested and attack command exists.","command":"attack sheep 1","message":"On it.","agent_tasks":[]}
+                        - If user says "go kill mobs", prefer:
+                            {"reason":"User wants nearby hostile mobs cleared.","command":"hero","message":"Clearing nearby hostiles.","agent_tasks":[]}
+                        - If user says "build me a hut", do not invent place/build commands. Prefer:
+                            {"reason":"No direct building command exists.","command":"","message":"I can gather materials, but I don't have a direct building command. Tell me what to collect or where to go.","agent_tasks":[]}
+                        - If user asks a factual question like "what do I have?", prefer no command and answer briefly from status.
+                        - Do not narrate a multi-step plan when one command is enough.
+
+                        Multi-Agent Policy:
+                        - `agent_tasks` is optional and only for useful follow-up work after the primary command.
+                        - Each agent task should be a small, concrete command with a short goal.
+                        - Do not duplicate the primary command inside `agent_tasks`.
+
+                        Required Response JSON:
+                        {
+                            "reason": "Short internal reasoning about the next best action.",
+                            "command": "Single command to run, or \"\".",
+                            "message": "Short natural reply to the user, or \"\".",
+                            "agent_tasks": [
+                                {"agent": "builder", "goal": "optional goal", "command": "optional secondary command"}
+                            ]
+                        }
+
+                        Hard Rules:
+                        - Always output strict JSON only.
+                        - Keep `reason` short and factual.
+                        - Keep `message` concise, practical, and usually under 160 characters.
+                        - Do not output markdown, code fences, tool docs, or API calls.
+                        - If the user asks for a mod/config action, respond with a message and only use a user-only command if appropriate.
+
+                        Command Playbook:
+                        {{toolingPaths}}
+
+                        Command Catalog:
+                        {{validCommands}}
             """;
-    private CommandExecutor cmdExecutor = null;
-    private AltoClef mod = null;
 
-    private boolean _enabled = true;
-    private boolean _playermode = false;
+    private final CommandExecutor cmdExecutor;
+    private final AltoClef mod;
+    private final AgentTaskCoordinator agentTaskCoordinator = new AgentTaskCoordinator();
 
-    private String _lastQueuedMessage = null;
+    private boolean enabled = true;
+    private boolean playermode = false;
 
+    private String lastQueuedMessage;
     private boolean llmProcessing = false;
-
     private boolean eventPolling = false;
 
-    private MessageBuffer altoClefMsgBuffer = new MessageBuffer(10);
+    private final MessageBuffer altoClefMsgBuffer = new MessageBuffer(10);
 
     public static final ExecutorService llmThread = Executors.newSingleThreadExecutor();
-
-    public static final ExecutorService sttThread = Executors.newSingleThreadExecutor();
 
     private final Queue<String> messageQueue = new ConcurrentLinkedQueue<>();
 
     public AICommandBridge(CommandExecutor cmdExecutor, AltoClef mod) {
         this.mod = mod;
         this.cmdExecutor = cmdExecutor;
+        this.character = DEFAULT_CHARACTER;
+
         EventBus.subscribe(ChatMessageEvent.class, evt -> {
-            if (!getPlayerMode())
+            if (!getPlayerMode()) {
                 return;
+            }
             String message = evt.messageContent();
             String sender = evt.senderName();
-            // ignore more than 200 away
             float distance = StatusUtils.getUserNameDistance(mod, sender);
             if (distance > 200) {
-                System.out.printf("[AIBridge/CharMessageEvent]/Ignoring message, distance too high: %.2f%n", distance);
                 return;
             }
             MessageType messageType = evt.messageType();
             String receiver = mod.getPlayer().getName().getString();
-            System.out.printf(
-                    "[AIBridge/CharMessageEvent]/MESSAGE (%s) SENDER (%s) MESSAGE TYPE (%s), DISTANCE(%.2f%n)", message,
-                    sender, messageType, distance);
+            System.out.printf("[AIBridge/ChatMessageEvent] (%s) from (%s) type (%s), distance(%.2f)%n",
+                    message, sender, messageType, distance);
             if (sender != null && !Objects.equals(sender, receiver)) {
                 String wholeMessage = "Other players: [" + sender + "] " + message;
                 addMessageToQueue(wholeMessage + "| Remember to roleplay as " + this.character.name);
@@ -109,35 +153,17 @@ public class AICommandBridge {
         });
     }
 
-    /**
-     * Updates this. (conversationHistory, character) based on the currently
-     * selected character.
-     */
     private void updateInfo() {
-        System.out.println("Updating info");
-        Character newCharacter = Player2APIService.getSelectedCharacter();
-        // System.out.println(newCharacter);
-        // SkinChanger.changeSkinFromUsername("Dream", SkinType.CLASSIC);
-        this.character = newCharacter;
-
-        // // GET COMMANDS:
-        int padSize = 10;
-        StringBuilder commandListBuilder = new StringBuilder();
-
-        for (Command c : AltoClef.getCommandExecutor().allCommands()) {
-            StringBuilder line = new StringBuilder();
-            line.append(c.getName()).append(": ");
-            int toAdd = padSize - c.getName().length();
-            line.append(" ".repeat(Math.max(0, toAdd)));
-            line.append(c.getDescription()).append("\n");
-            commandListBuilder.append(line);
-        }
-        String validCommandsFormatted = commandListBuilder.toString();
+        String validCommandsFormatted = buildValidCommands();
+        String toolingPaths = buildToolingPaths();
 
         String newPrompt = Utils.replacePlaceholders(initialPrompt,
-                Map.of("characterDescription", character.description, "characterName", character.name, "validCommands",
-                        validCommandsFormatted));
-        System.out.println("New prompt: " + newPrompt);
+                Map.of(
+                        "characterDescription", character.description,
+                        "characterName", character.name,
+                        "validCommands", validCommandsFormatted,
+                        "toolingPaths", toolingPaths
+                ));
 
         if (this.conversationHistory == null) {
             this.conversationHistory = new ConversationHistory(newPrompt, this.character.name, this.character.shortName);
@@ -146,26 +172,71 @@ public class AICommandBridge {
         }
     }
 
+    private String buildValidCommands() {
+        StringBuilder commandListBuilder = new StringBuilder();
+        for (Command c : AltoClef.getCommandExecutor().allCommands()) {
+            commandListBuilder
+                    .append("- ")
+                    .append(c.getName())
+                    .append(": ")
+                    .append(c.getDescription())
+                    .append("\n");
+        }
+        return commandListBuilder.toString().trim();
+    }
+
+    private String buildToolingPaths() {
+        String prefix = cmdExecutor.getCommandPrefix();
+        StringBuilder paths = new StringBuilder();
+        paths.append("- Action requests should usually produce a command. Example syntax: ")
+                .append(prefix)
+                .append("get iron_pickaxe 1, ")
+                .append(prefix)
+                .append("goto 100 64 200, ")
+                .append(prefix)
+                .append("follow Steve.\n");
+        paths.append("- Conversation-only requests should usually leave `command` empty and answer in `message`.\n");
+        paths.append("- User-only mod control commands: ")
+                .append(buildUserOnlyCommands(prefix))
+                .append(".\n");
+        paths.append("- Never use unknown commands. Choose the single best command from the catalog.");
+        return paths.toString();
+    }
+
+    private String buildUserOnlyCommands(String prefix) {
+        StringBuilder userOnly = new StringBuilder();
+        for (Command c : AltoClef.getCommandExecutor().allCommands()) {
+            String description = c.getDescription();
+            if (description != null && description.toLowerCase().contains("only be run by the user")) {
+                if (!userOnly.isEmpty()) {
+                    userOnly.append(", ");
+                }
+                userOnly.append(prefix).append(c.getName());
+            }
+        }
+        if (userOnly.isEmpty()) {
+            return "none";
+        }
+        return userOnly.toString();
+    }
+
     public void addAltoclefLogMessage(String message) {
-        // String output = String.format("Game sent info message: %s", message);
-        System.out.printf("ADDING Altoclef System Message: %s", message);
         altoClefMsgBuffer.addMsg(message);
     }
 
     public void addMessageToQueue(String message) {
-        if (message == null)
+        if (message == null) {
             return;
-        // 1) skip if it’s identical to the last one we added
-        if (message.equals(_lastQueuedMessage))
+        }
+        if (message.equals(lastQueuedMessage)) {
             return;
+        }
 
-        // 2) enqueue & remember it
         messageQueue.offer(message);
-        _lastQueuedMessage = message;
+        lastQueuedMessage = message;
 
-        // 3) enforce max size
         if (messageQueue.size() > 10) {
-            messageQueue.poll(); // remove oldest
+            messageQueue.poll();
         }
     }
 
@@ -173,60 +244,39 @@ public class AICommandBridge {
         llmThread.submit(() -> {
             try {
                 llmProcessing = true;
-                System.out.println("[AICommandBridge/processChatWithAPI]: Sending messages to LLM");
-
                 String agentStatus = AgentStatus.fromMod(mod).toString();
                 String worldStatus = WorldStatus.fromMod(mod).toString();
                 String altoClefDebugMsgs = altoClefMsgBuffer.dumpAndGetString();
-                ConversationHistory historyWithStatus = conversationHistory.copyThenWrapLatestWithStatus(worldStatus,
-                        agentStatus, altoClefDebugMsgs);
-                System.out.printf("[AICommandBridge/processChatWithAPI]: History: %s", historyWithStatus.toString());
+                String embeddedMemory = agentTaskCoordinator.dumpEmbeddedMemory();
+
+                ConversationHistory historyWithStatus = conversationHistory.copyThenWrapLatestWithStatus(
+                        worldStatus,
+                        agentStatus,
+                        altoClefDebugMsgs,
+                        embeddedMemory
+                );
+
                 JsonObject response = Player2APIService.completeConversation(historyWithStatus);
                 String responseAsString = response.toString();
-                System.out.println("[AICommandBridge/processChatWithAPI]: LLM Response: " + responseAsString);
                 conversationHistory.addAssistantMessage(responseAsString);
 
-                // process message
                 String llmMessage = Utils.getStringJsonSafely(response, "message");
                 if (llmMessage != null && !llmMessage.isEmpty()) {
                     mod.logCharacterMessage(llmMessage, character, getPlayerMode());
-                    Player2APIService.textToSpeech(llmMessage, character);
                 }
 
-                // process command
+                agentTaskCoordinator.enqueueTasksFromResponse(response);
+
                 String commandResponse = Utils.getStringJsonSafely(response, "command");
                 if (commandResponse != null && !commandResponse.isEmpty()) {
-                    String commandWithPrefix = cmdExecutor.isClientCommand(commandResponse) ? commandResponse
-                            : cmdExecutor.getCommandPrefix() + commandResponse;
-                    if (commandWithPrefix.equals("@stop")) {
-                        mod.isStopping = true;
-                    } else {
-                        mod.isStopping = false;
-                    }
-                    cmdExecutor.execute(commandWithPrefix, () -> {
-                        if (mod.isStopping) {
-                            System.out.printf(
-                                    "[AICommandBridge/processChat]: (%s) was cancelled. Not adding finish event to queue.",
-                                    commandWithPrefix);
-                            // Canceled logic here
-                        }
-                        if (messageQueue.isEmpty() && !mod.isStopping) {
-                            // on finish
-                            addMessageToQueue(String.format(
-                                    "Command feedback: %s finished running. What shall we do next? If no new action is needed to finish user's request, generate empty command `\"\"`." + "| Remember to roleplay as " + this.character.name,
-                                    commandResponse));
-                        }
-                    }, (err) -> {
-                        // on error
-                        addMessageToQueue(
-                                String.format("Command feedback: %s FAILED. The error was %s." + "| Remember to roleplay as " + this.character.name,
-                                        commandResponse, err.getMessage()));
-                    });
+                    executeCommand("general", commandResponse, commandResponse);
+                } else {
+                    executeNextAgentTask();
                 }
 
             } catch (Exception e) {
                 e.printStackTrace();
-                System.err.println("Error communicating with API");
+                System.err.println("Error communicating with provider API");
             } finally {
                 llmProcessing = false;
                 eventPolling = false;
@@ -234,34 +284,63 @@ public class AICommandBridge {
         });
     }
 
-    /**
-     * Sends either the first-time greeting or a welcome-back message based on loaded history.
-     */
+    private void executeNextAgentTask() {
+        AgentTaskCoordinator.AgentTask next = agentTaskCoordinator.pollNextTask();
+        if (next == null) {
+            return;
+        }
+        executeCommand(next.getAgentId(), next.getCommand(), next.getGoal());
+    }
+
+    private void executeCommand(String agentId, String commandResponse, String goal) {
+        String commandWithPrefix = cmdExecutor.isClientCommand(commandResponse)
+                ? commandResponse
+                : cmdExecutor.getCommandPrefix() + commandResponse;
+
+        mod.isStopping = "@stop".equals(commandWithPrefix);
+        cmdExecutor.execute(commandWithPrefix, () -> {
+            if (!mod.isStopping) {
+                if (!messageQueue.isEmpty()) {
+                    return;
+                }
+                String goalSegment = (goal == null || goal.isBlank()) ? "" : (" | Goal: " + goal);
+                String feedback = "Command feedback [" + agentId + "]: " + commandResponse + " finished."
+                        + goalSegment
+                        + " If no further action is needed, generate empty command \"\"."
+                        + "| Remember to roleplay as " + this.character.name;
+                addMessageToQueue(feedback);
+                agentTaskCoordinator.addResult(agentId, "Finished: " + commandResponse + goalSegment);
+            }
+            executeNextAgentTask();
+        }, (err) -> {
+            String error = err == null ? "Unknown error" : err.getMessage();
+            String feedback = "Command feedback [" + agentId + "]: " + commandResponse + " FAILED. Error: " + error
+                    + "| Remember to roleplay as " + this.character.name;
+            addMessageToQueue(feedback);
+            agentTaskCoordinator.addResult(agentId, "Failed: " + commandResponse + " | Error: " + error);
+            executeNextAgentTask();
+        });
+    }
+
     public void sendGreeting() {
-        System.out.println("Sending Greeting");
         llmThread.submit(() -> {
             updateInfo();
-            // If history was loaded from disk, send welcome back; otherwise, first-time greeting
             if (conversationHistory.isLoadedFromFile()) {
                 addMessageToQueue(
-                    "You want to welcome user back. IMPORTANT: SINCE THIS IS THE FIRST MESSAGE, DO NOT SEND A COMMAND!!| Remember to roleplay as " + this.character.name
-                );
+                        "Welcome the user back. First response should not run a command."
+                                + "| Remember to roleplay as " + this.character.name);
             } else {
                 addMessageToQueue(
-                    character.greetingInfo + " IMPORTANT: SINCE THIS IS THE FIRST MESSAGE, DO NOT SEND A COMMAND!!"
-                    + "| Remember to roleplay as " + this.character.name
-                );
+                        character.greetingInfo + " First response should not run a command."
+                                + "| Remember to roleplay as " + this.character.name);
             }
         });
     }
 
-    public void sendHeartbeat() {
-        llmThread.submit(() -> {
-            Player2APIService.sendHeartbeat();
-        });
-    }
-
     public void onTick() {
+        if (conversationHistory == null) {
+            updateInfo();
+        }
         if (messageQueue.isEmpty()) {
             return;
         }
@@ -270,7 +349,6 @@ public class AICommandBridge {
             String message = messageQueue.poll();
             conversationHistory.addUserMessage(message);
             if (messageQueue.isEmpty()) {
-                // That was last message
                 processChatWithAPI();
             } else {
                 eventPolling = false;
@@ -279,11 +357,11 @@ public class AICommandBridge {
     }
 
     public void setEnabled(boolean enabled) {
-        _enabled = enabled;
+        this.enabled = enabled;
     }
 
     public boolean getEnabled() {
-        return _enabled;
+        return enabled;
     }
 
     public Character getCharacter() {
@@ -294,36 +372,22 @@ public class AICommandBridge {
         return conversationHistory;
     }
 
+    public void clearMemory() {
+        if (conversationHistory != null) {
+            conversationHistory.clear();
+        }
+        agentTaskCoordinator.clear();
+    }
+
+    public void reloadProviderConfig() {
+        updateInfo();
+    }
+
     public void setPlayerMode(boolean playermode) {
-        _playermode = playermode;
+        this.playermode = playermode;
     }
 
     public boolean getPlayerMode() {
-        return _playermode;
-    }
-
-    public void startSTT() {
-        sttThread.execute(Player2APIService::startSTT);
-    }
-
-    public void stopSTT() {
-        sttThread.execute(() -> {
-            String result = Player2APIService.stopSTT();
-
-            if(!_enabled){
-                mod.getMessageSender().enqueueChat(result, null);
-                return;
-            }
-            if (result.length() == 0) {
-                addMessageToQueue("The user tried to send a STT message, but it was not picked up." + "| Remember to roleplay as " + this.character.name);
-                Debug.logUserMessage("Could not hear user message.");
-                return;
-            }
-            addMessageToQueue(String.format("User: %s", result + "| Remember to roleplay as " + this.character.name));
-            // if (getPlayerMode()) {
-            // } else {
-            Debug.logUserMessage(result);
-            // }
-        });
+        return playermode;
     }
 }

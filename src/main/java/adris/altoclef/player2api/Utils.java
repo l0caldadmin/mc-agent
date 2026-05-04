@@ -91,9 +91,26 @@ public class Utils {
      * @throws JsonSyntaxException If the content is not valid JSON.
      */
     public static JsonObject parseCleanedJson(String content) throws JsonSyntaxException {
-        content = content.replaceAll("^```json\\s*", "").replaceAll("\\s*```$", "").trim();
+        if (content == null) {
+            throw new JsonSyntaxException("Cannot parse null JSON content.");
+        }
+        String cleaned = content
+                .replaceAll("^```[a-zA-Z0-9_-]*\\s*", "")
+                .replaceAll("\\s*```$", "")
+                .trim();
+
         JsonParser parser = new JsonParser();
-        return parser.parse(content).getAsJsonObject();
+        try {
+            return parser.parse(cleaned).getAsJsonObject();
+        } catch (Exception ignored) {
+            int firstBrace = cleaned.indexOf('{');
+            int lastBrace = cleaned.lastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace) {
+                String inner = cleaned.substring(firstBrace, lastBrace + 1);
+                return parser.parse(inner).getAsJsonObject();
+            }
+            throw new JsonSyntaxException("No JSON object found in content: " + cleaned);
+        }
     }
 
     /**

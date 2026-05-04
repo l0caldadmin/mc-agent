@@ -5,7 +5,7 @@
 
 ## ChatClef is a Minecraft AI copilot mod that can play the game for you or with you. 
 
-Download the [Player2 app](https://player2.game/), and install Fabric API and this mod in Minecraft to play. You **do not** need to install AltoClef or Baritone separately.
+Install Fabric API and this mod in Minecraft to play. You **do not** need to install AltoClef or Baritone separately.
 
 It automates Minecraft tasks from start to finish, including beating the game completely solo. Press Z key to talk to the AI using voice chat.
 
@@ -16,7 +16,7 @@ It automates Minecraft tasks from start to finish, including beating the game co
 ChatClef is a client-side AI mod designed to be your Minecraft copilot/friend.
 If you can open a second client, ChatClef can take over that instance and act as a second AI-controlled player in multiplayer.
 
-To get the AI working, you need to have the [Player2 app](https://player2.game/), install Fabric API and this mod in Minecraft, and start Minecraft.
+To get the AI working, configure an OpenAI-compatible endpoint or a local Ollama endpoint, install Fabric API and this mod in Minecraft, and start Minecraft.
 Once installed, the AI will be able to:
 
 - Chat with you
@@ -24,14 +24,13 @@ Once installed, the AI will be able to:
 - Beat the game solo
 - Or just mess around with you like a chaotic Minecraft sidekick
 
-It builds on top of [Player2](https://player2.game), [AltoClef](https://github.com/MiranCZ/altoclef) and [Baritone](https://github.com/cabaletta/baritone). It’s completely free, open-source, and constantly being improved.
+It builds on top of [AltoClef](https://github.com/MiranCZ/altoclef) and [Baritone](https://github.com/cabaletta/baritone), with direct LLM provider support (OpenAI and Ollama). It’s completely free, open-source, and constantly being improved.
 
 ---
 
 ## How it works
-This mod adds the Player2 interface to [AltoClef](https://github.com/MiranCZ/altoclef) and [Baritone](https://github.com/cabaletta/baritone).
-The Player2 App provides free STT, TTS, and LLM functions. Make sure the Player2 App is running while using this mod.
-Press Z to talk to the AI using voice. You can change the key binding in settings.
+This mod adds an AI command interface to [AltoClef](https://github.com/MiranCZ/altoclef) and [Baritone](https://github.com/cabaletta/baritone).
+The LLM endpoint is configured via `config/chatclef_config.json`, including provider (`openai` or `ollama`), base URL, model, and optional API key.
 Memory and conversation history are stored in the mod folder under the AI's name if you need to view them.
 Be careful not to edit the file if you don't know what you are doing, we won't be responsible if your edit cause any problems.
 

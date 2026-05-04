@@ -82,12 +82,15 @@ public class MessageSender {
         ClientPlayNetworkHandler networkHandler =  MinecraftClient.getInstance().getNetworkHandler();
         assert networkHandler != null;
         AICommandBridge.avoidNextMessageFlag = true;
-        if (command) {
-            PlayerVer.sendChatCommand(MinecraftClient.getInstance().player, message);
-        } else {
-            PlayerVer.sendChatMessage(MinecraftClient.getInstance().player, message);
+        try {
+            if (command) {
+                PlayerVer.sendChatCommand(MinecraftClient.getInstance().player, message);
+            } else {
+                PlayerVer.sendChatMessage(MinecraftClient.getInstance().player, message);
+            }
+        } finally {
+            AICommandBridge.avoidNextMessageFlag = false;
         }
-        AICommandBridge.avoidNextMessageFlag = false;
     }
 
     private static abstract class BaseMessage {

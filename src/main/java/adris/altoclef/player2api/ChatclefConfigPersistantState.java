@@ -13,15 +13,80 @@ public class ChatclefConfigPersistantState {
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("chatclef_config.json");
     private static ChatclefConfigPersistantState config = load();
 
-    private boolean sttHintEnabled = true;
+    private String llmProvider = "ollama";
+    private String llmBaseUrl = "http://127.0.0.1:11434";
+    private String llmModel = "llama3.1";
+    private String llmApiKey = "";
+    private boolean multiAgentEnabled = true;
+    private int maxAgentTasksPerTurn = 3;
+    private int maxAgentMemoryEntries = 12;
 
-    public static boolean isSttHintEnabled() {
-        return instance().sttHintEnabled;
+    public static String getLlmProvider() {
+        String provider = instance().llmProvider;
+        return provider == null || provider.isBlank() ? "ollama" : provider.trim().toLowerCase();
     }
 
-    public static void updateSttHint(boolean value) {
-        System.out.println("[ChatclefConfigPersistantState]: updateSttHint called with: " + value);
-        instance().sttHintEnabled = value;
+    public static String getLlmBaseUrl() {
+        String url = instance().llmBaseUrl;
+        return url == null ? "" : url.trim();
+    }
+
+    public static String getLlmModel() {
+        String model = instance().llmModel;
+        return model == null ? "" : model.trim();
+    }
+
+    public static String getLlmApiKey() {
+        String key = instance().llmApiKey;
+        return key == null ? "" : key.trim();
+    }
+
+    public static boolean isMultiAgentEnabled() {
+        return instance().multiAgentEnabled;
+    }
+
+    public static int getMaxAgentTasksPerTurn() {
+        int configured = instance().maxAgentTasksPerTurn;
+        return Math.max(1, configured);
+    }
+
+    public static int getMaxAgentMemoryEntries() {
+        int configured = instance().maxAgentMemoryEntries;
+        return Math.max(4, configured);
+    }
+
+    public static void setLlmProvider(String provider) {
+        instance().llmProvider = provider == null ? "ollama" : provider.trim().toLowerCase();
+        save();
+    }
+
+    public static void setLlmBaseUrl(String baseUrl) {
+        instance().llmBaseUrl = baseUrl == null ? "" : baseUrl.trim();
+        save();
+    }
+
+    public static void setLlmModel(String model) {
+        instance().llmModel = model == null ? "" : model.trim();
+        save();
+    }
+
+    public static void setLlmApiKey(String apiKey) {
+        instance().llmApiKey = apiKey == null ? "" : apiKey.trim();
+        save();
+    }
+
+    public static void setMultiAgentEnabled(boolean enabled) {
+        instance().multiAgentEnabled = enabled;
+        save();
+    }
+
+    public static void setMaxAgentTasksPerTurn(int maxTasks) {
+        instance().maxAgentTasksPerTurn = Math.max(1, maxTasks);
+        save();
+    }
+
+    public static void setMaxAgentMemoryEntries(int maxEntries) {
+        instance().maxAgentMemoryEntries = Math.max(4, maxEntries);
         save();
     }
 
@@ -35,8 +100,15 @@ public class ChatclefConfigPersistantState {
                 e.printStackTrace();
             }
         }
-        System.out.println("[ChatclefConfigPersistantState]: Could not load file, using default.");
-        return new ChatclefConfigPersistantState();
+        System.out.println("[ChatclefConfigPersistantState]: Could not load file, writing defaults.");
+        ChatclefConfigPersistantState defaults = new ChatclefConfigPersistantState();
+        try {
+            Files.createDirectories(CONFIG_PATH.getParent());
+            Files.writeString(CONFIG_PATH, GSON.toJson(defaults));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return defaults;
     }
 
     private static void save() {
