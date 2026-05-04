@@ -48,6 +48,7 @@ def mappingsVersions = [
         12006: "1.20.6+build.3",
         12100: "1.21+build.9",
         12101: "1.21.1+build.3",
+        12111: "1.21.1+build.3",
 ]
 
 def fabricApiVersions = [
@@ -63,6 +64,22 @@ def fabricApiVersions = [
         12006: "0.100.0+1.20.6",
         12100: "0.100.7+1.21",
         12101: "0.110.0+1.21.1",
+        12111: "0.110.0+1.21.1",
+]
+
+def baritonVersions = [
+        11701: "1.17.1",
+        11800: "1.18",
+        11802: "1.18.2",
+        11904: "1.19.4",
+        12001: "1.20.1",
+        12002: "1.20.2",
+        12004: "1.20.4",
+        12005: "1.20.5",
+        12006: "1.20.6",
+        12100: "1.21",
+        12101: "1.21.1",
+        12111: "1.21.1",
 ]
 
 
@@ -113,11 +130,11 @@ dependencies {
     // Thank you georgeagostino for fixing my garbage
     if (getProject().hasProperty("altoclef.development")) {
         // Must run build from baritone-plus once
-        modImplementation "baritone-api-fabric:baritone-unoptimized-fabric-${project.name}"
-        include "baritone-api-fabric:baritone-unoptimized-fabric-${project.name}"
+        modImplementation "baritone-api-fabric:baritone-unoptimized-fabric-${baritonVersions[mcVersion]}"
+        include "baritone-api-fabric:baritone-unoptimized-fabric-${baritonVersions[mcVersion]}"
     } else {
-        modImplementation "cabaletta:baritone-unoptimized-fabric:${project.name}"
-        include "cabaletta:baritone-unoptimized-fabric:${project.name}"
+        modImplementation "cabaletta:baritone-unoptimized-fabric:${baritonVersions[mcVersion]}"
+        include "cabaletta:baritone-unoptimized-fabric:${baritonVersions[mcVersion]}"
     }
     //modImplementation 'baritone-api-fabric:baritone-api-fabric:1.6.3'
     //implementation files('baritone-plus/build/libs/baritone-unoptimized-fabric-1.6.3.jar')

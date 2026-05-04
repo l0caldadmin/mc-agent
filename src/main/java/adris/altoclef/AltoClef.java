@@ -34,6 +34,7 @@ import adris.altoclef.multiversion.DrawContextWrapper;
 import adris.altoclef.multiversion.RenderLayerVer;
 import adris.altoclef.multiversion.versionedfields.Blocks;
 import adris.altoclef.player2api.AICommandBridge;
+import adris.altoclef.diagnostics.BaritoneDiagnosticRunner;
 import adris.altoclef.player2api.Character;
 import adris.altoclef.tasksystem.Task;
 import adris.altoclef.tasksystem.TaskRunner;
@@ -111,6 +112,7 @@ public class AltoClef implements ModInitializer {
 
     // AI Command & API
     private AICommandBridge aiBridge;
+    private BaritoneDiagnosticRunner baritoneDiagnosticRunner;
 
     // stopping logic
     public boolean isStopping = false;
@@ -190,6 +192,7 @@ public class AltoClef implements ModInitializer {
 
         butler = new Butler(this);
         aiBridge = new AICommandBridge(commandExecutor, this);
+        baritoneDiagnosticRunner = new BaritoneDiagnosticRunner(this);
 
         // Baritone
         initializeBaritoneSettings();
@@ -279,6 +282,9 @@ public class AltoClef implements ModInitializer {
         if (aiBridge.getEnabled() && inGame && AltoClef.inGame()) {
             aiBridge.onTick();
         }
+        if (baritoneDiagnosticRunner != null && inGame && AltoClef.inGame()) {
+            baritoneDiagnosticRunner.tick();
+        }
 
         // TODO: should this go here?
         storageTracker.setDirty();
@@ -309,6 +315,10 @@ public class AltoClef implements ModInitializer {
 
     public AICommandBridge getAiBridge() {
         return this.aiBridge;
+    }
+
+    public BaritoneDiagnosticRunner getBaritoneDiagnosticRunner() {
+        return this.baritoneDiagnosticRunner;
     }
 
     public void setChatClefEnabled(boolean enabled) {
